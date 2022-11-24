@@ -1,184 +1,257 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 from PIL import Image
-import streamlit as st
-import datetime
-import calendar
+import pickle
+import numpy as np
+import pandas as pd
+from io import BytesIO
+from pyxlsb import open_workbook as open_xlsb
+import altair_ally as aly
 import altair as alt
 
-icon = Image.open("resources/favicon.ico")
+## Set page icon
+icon = Image.open("./resources/favicon.ico")
 
+## Set page title and layout
 st.set_page_config(
-    page_title="Dashboard - Carbon Consumption Analytics",
+    page_title="Anode Cost Prediction - Carbon Consumption Analytics",
     page_icon=icon,
+    layout='wide',
+    initial_sidebar_state='collapsed'
 )
 
-st.markdown("""
-<style>
-div[data-testid="metric-container"] {
-    background-color: #0094d9;
-    margin: auto;
-    border-radius: 5px;
-    padding: 20px;
-}
-label[data-testid="stMetricLabel"] > div {
-    font-size: 100%;
-    justify-content: center;
-}
-div[data-testid="stMetricValue"] > div {
-    font-size: 125%;
-    justify-content: center;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-#### MAIN ####
+# Display Inalum's logo
 image = Image.open('resources/logo inalum.png')
 st.image(image)
 
-st.title('Carbon Consumption Analytics')
-today = datetime.datetime.now()
-df = pd.read_excel("data/input2.xlsx")
-df.rename(columns={'Date(Monthly)': 'Date'}, inplace=True)
+# Set title
+st.title('Anode Cost Prediction')
 
-st.markdown("📆 %s, %s %s, %s" % (calendar.day_name[today.weekday()], today.strftime("%b"), today.day, today.year))
-st.markdown("## Dashboard ")
-metric_col = st.columns(3)
+# Load the data
+data_prediksi = pd.read_csv("data/prediksi_material_nac.csv", sep=";")
 
-with metric_col[0]:
-    st.metric('Latest Anoda', df[df["Date"]==df["Date"].max()].iloc[0]["LotAnoda"])
-with metric_col[1]:
-    st.metric('Number of Anoda This Year', df[pd.DatetimeIndex(df["Date"]).year==today.year].shape[0])
-with metric_col[2]:
-    st.metric('Latest Actual NAC', round(df[df["Date"]==df["Date"].max()].iloc[0]["NAC Actual"],2))
-st.markdown("###### Select Data Period ")
+def calculate_price(data):
+    cpc_hs_percent = data["cpc_hs_percent"] * (1-data["butt_percent"]) * (1-data["ctp_percent"])
+    cpc_ls_percent = data["cpc_ls_percent"] * (1 - data["butt_percent"]) * (1 - data["ctp_percent"])
+    total_price = round(((cpc_hs_percent/100) * float(data["cpc_hs_price"]) + (cpc_ls_percent/100) * float(data["cpc_ls_price"]) + (data["ctp_percent"]/100) * float(data["ctp_price"]) + (data["butt_percent"]/100) * float(data["butt_price"]))/1000,2)
 
-col1= st.columns(2)
+    return total_price
 
-with col1[0]:
-    start_date = st.date_input(
-        "Start date",
-        df["Date"].min().to_pydatetime(),
-        min_value=df["Date"].min().to_pydatetime(),
-        max_value=today,
+def get_carbon(data_prediksi, material_type):
+    rro2 = data_prediksi.loc[data_prediksi["Lot"] == material_type, "RRO2"].iloc[0]
+    rrco2 = data_prediksi.loc[data_prediksi["Lot"] == material_type, "RRCO2"].iloc[0]
+    ap = data_prediksi.loc[data_prediksi["Lot"] == material_type, "AP"].iloc[0]
+    tc = data_prediksi.loc[data_prediksi["Lot"] == material_type, "TC"].iloc[0]
+    nac = data_prediksi.loc[data_prediksi["Lot"] == material_type, "NAC"].iloc[0]
+
+    return rro2, rrco2, ap, tc, nac
+
+# Create multiple tabs
+single_pred_tab, batch_pred_tab = st.tabs(["Single Cost Prediction", "Multiple Cost Prediction"])
+
+###### Tab 1: Single Prediction with Main Variables ######
+with single_pred_tab:
+    st.markdown("#### Material Type and Price")
+    col1 = st.columns(3)
+
+    # Input for the variables
+    with col1[0]:
+        cpc_hs_option = st.selectbox("Select CPC HS type", ["A","F", "M", "W"], 3)
+
+
+    with col1[1]:
+        cpc_ls_option = st.selectbox("Select CPC LS type", ["G", "J", "S"],)
+
+
+    with col1[2]:
+        ctp_option = st.selectbox("Select CTP type", ["A", "E", "H", "Q"])
+
+
+    col2 = st.columns(4)
+
+    with col2[0]:
+        cpc_hs_price = st.text_input("Input CPC HS price (USD/Ton)", 1000)
+
+    with col2[1]:
+        cpc_ls_price = st.text_input("Input CPC LS price (USD/Ton)", 1200)
+
+    with col2[2]:
+        ctp_price = st.text_input("Input CTP price (USD/Ton)", 1500)
+
+    with col2[3]:
+        butt_price = st.text_input("Input Butt price (USD/Ton)", 178.82)
+
+
+    st.markdown("#### Material Percentage")
+    col3 = st.columns(4)
+
+    with col3[0]:
+        cpc_hs_slider = st.slider(
+            'CPC HS Percentage',
+            0.0, 100.0, 70.0)
+
+    with col3[1]:
+        cpc_ls_slider = st.slider(
+            'CPC LS Percentage',
+            0.0, 100.0, 100.0-cpc_hs_slider)
+
+    with col3[2]:
+        ctp_slider = st.slider(
+            'CTP Percentage',
+            13.0, 16.0, 14.0)
+
+    with col3[3]:
+        butt_slider = st.slider(
+            'Butt Percentage',
+            25.0, 35.0, 30.0)
+
+    material_type = cpc_hs_option+cpc_ls_option+ctp_option
+
+    rro2, rrco2, ap, tc, nac = get_carbon(data_prediksi,material_type)
+    st.markdown('#### Carbon Prediction')
+    st.text('RRO2: ' + str(rro2))
+    st.text('RRCO2: ' + str(rrco2))
+    st.text('AP: ' + str(ap))
+    st.text('TC: ' + str(tc))
+    st.text('NAC: ' + str(nac))
+
+    # Create dataframe for the features input
+    data = {
+                'cpc_hs_percent': cpc_hs_slider,
+                'cpc_ls_percent': cpc_ls_slider,
+                'ctp_percent': ctp_slider,
+                'butt_percent': butt_slider,
+                'cpc_hs_price': cpc_hs_price,
+                'cpc_ls_price': cpc_ls_price,
+                'ctp_price': ctp_price,
+                'butt_price': butt_price,
+                }
+
+    total_price = calculate_price(data)
+
+    st.markdown('#### Calculated Price: '+ str(total_price) +" USD")
+
+
+###### Tab 2: Batch Prediction ######
+with batch_pred_tab:
+#@st.cache
+    # Function to create an Excel file
+    def to_excel(df):
+        output = BytesIO()
+        writer = pd.ExcelWriter(output, engine='xlsxwriter')
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+        workbook = writer.book
+        worksheet = writer.sheets['Sheet1']
+        format1 = workbook.add_format({'num_format': '0.00'})
+        worksheet.set_column('A:A', None, format1)
+        writer.save()
+        processed_data = output.getvalue()
+        return processed_data
+
+    # Reading data
+    data_template = pd.read_csv("data/cost_prediction_template.csv", sep=";")
+
+    # Upload the excel file
+    st.markdown('#### Uploading the material price')
+    st.write("Please make sure the uploaded file follows the right template for the material type and price.")
+
+    # Create the template file
+    template_file = to_excel(data_template)
+    # Button to download the template file
+    st.download_button(
+        label='📥 Download template file',
+        data=template_file,
+        file_name='template_cost.xlsx',
     )
 
-with col1[1]:
-    end_date = st.date_input(
-        "End date",
-        today,
-        min_value=df["Date"].min().to_pydatetime(),
-        max_value=today,
-    )
+    # Input file uploader
+    uploaded_file = st.file_uploader("Choose an Excel file")
+    # Read the input file
+    if uploaded_file is not None:
+        df_input = pd.read_excel(uploaded_file)
+        st.dataframe(df_input)
 
-## AVERAGE NAC PLOT ##
-st.subheader("Average NAC Trend by Time")
-col2 = st.columns(3)
-with col2[0]:
-    nac_option = st.selectbox("Select NAC data type", ("Actual and Calculation", "Actual", "Calculation"))
-filter = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
-selected_data = df.loc[filter]
+    st.markdown("#### Material Percentage")
+    col4 = st.columns(4)
 
-if nac_option == "Actual and Calculation":
-    selected_data_nac = selected_data.loc[:, ['Date', 'NAC Actual', 'NAC Calc']]
-    selected_data_nac = selected_data_nac.melt('Date', var_name='Type', value_name='NAC')
-    ch = alt.Chart(selected_data_nac).mark_line().encode(
-        x='Date',
-        #y=column_name,
-        y=alt.Y('NAC', scale=alt.Scale(domain=[350, 550])),
-        color='Type',
-        tooltip=[alt.Tooltip('NAC', format=",.2f"), 'Date'],
-    ).interactive()
-else:
-    if nac_option == "Actual":
-        column_name = "NAC Actual"
-    elif nac_option == "Calculation":
-        column_name = "NAC Calc"
-    ch = alt.Chart(selected_data).mark_line().encode(
-        x='Date',
-        # y=column_name,
-        y=alt.Y(column_name, scale=alt.Scale(domain=[350, 550])),
-        tooltip=[alt.Tooltip(column_name, format=",.2f"), 'Date'],
-        ).interactive()
+    with col4[0]:
+        cpc_hs_slider_batch = st.slider(
+            'CPC HS Percentage',
+            0.0, 100.0, 70.0, key="batch_cpc_hs")
 
-st.altair_chart(ch,use_container_width=True,)
+    with col4[1]:
+        cpc_ls_slider_batch = st.slider(
+            'CPC LS Percentage',
+            0.0, 100.0, 100.0-cpc_hs_slider, key="batch_cpc_ls")
 
+    with col4[2]:
+        ctp_slider_batch = st.slider(
+            'CTP Percentage',
+            13.0, 16.0, 14.0, key="batch_ctp")
 
-## ANODA TYPE PLOT ##
-st.subheader("Anoda Type by Time")
+    with col4[3]:
+        butt_slider_batch = st.slider(
+            'Butt Percentage',
+            25.0, 35.0, 30.0, key="batch_butt")
 
-selected_data['Anoda Type'] = selected_data['LotAnoda'].apply(lambda x: x[:3])
+    # Make prediction when the button is clicked
+    if st.button('Analyze'):
+        df_cpc_ls = df_input.loc[df_input["Jenis"]=="CPC-LS",:]
+        df_cpc_hs = df_input.loc[df_input["Jenis"]=="CPC-HS",:]
+        df_ctp = df_input.loc[df_input["Jenis"]=="CTP",:]
 
-options = st.multiselect(
-    'Select Anoda Type',
-    selected_data['Anoda Type'].unique(),
-    ['MGE', 'WGE'])
+        all_prediction = []
 
-selected_data_anoda = selected_data[selected_data['Anoda Type'].isin(options)]
+        for _, row_cpc_hs in df_cpc_hs.iterrows():
+            for _, row_cpc_ls in df_cpc_ls.iterrows():
+                for _, row_ctp in df_ctp.iterrows():
+                    material_type = row_cpc_hs["Lot"] + row_cpc_ls["Lot"] + row_ctp["Lot"]
 
+                    rro2, rrco2, ap, tc, nac = get_carbon(data_prediksi, material_type)
+                    data_batch = {
+                        'cpc_hs_percent': cpc_hs_slider_batch,
+                        'cpc_ls_percent': cpc_ls_slider_batch,
+                        'ctp_percent': ctp_slider_batch,
+                        'butt_percent': butt_slider_batch,
+                        'cpc_hs_price': row_cpc_hs["Price"],
+                        'cpc_ls_price': row_cpc_ls["Price"],
+                        'ctp_price': row_ctp["Price"],
+                        'butt_price': 178.82,
+                    }
 
-st.altair_chart(
-    alt.Chart(selected_data_anoda).mark_bar().encode(
-        x='Date',
-        y='count(Anoda Type)',
-        color='Anoda Type',
-        tooltip=['Anoda Type', 'Date', 'count(Anoda Type)']
-    ).interactive(),use_container_width=True,)
+                    if not pd.isnull(nac):
+                        total_price_batch = calculate_price(data_batch)
 
+                        cpc_hs_type = row_cpc_hs["Lot"] + " - " + row_cpc_hs["Source"]
+                        cpc_ls_type = row_cpc_ls["Lot"] + " - " + row_cpc_ls["Source"]
+                        ctp_type = row_ctp["Lot"] + " - " + row_cpc_ls["Source"]
 
-col3 = st.columns(3)
+                        info = {
+                            "CPC HS Type": cpc_hs_type,
+                            "CPC LS Type": cpc_ls_type,
+                            "CTP Type": ctp_type,
+                            "RRO2" : rro2,
+                            "RRCO2" : rrco2,
+                            "AP" : ap,
+                            "TC" : tc,
+                            "NAC" : nac,
+                            "Predicted Cost" : round(total_price_batch,2),
+                            "Ratio NAC/Cost" : round(float(nac)/float(total_price_batch),2),
+                        }
 
-# ## CPC HS Pie Chart
-# st.markdown("###### CPC High Sulfur Distribution")
-# cpc_hs = selected_data['CPC HS'].value_counts().rename_axis('CPC HS').reset_index(name='Counts')
-# start_row = 6
-# cpc_hs.iloc[start_row] = cpc_hs.iloc[start_row:].sum()
-# cpc_hs = cpc_hs.iloc[:start_row + 1]
-# # cpc_hs.iloc[-1,0] = "Others"
-# sum_cpc_hs=cpc_hs["Counts"].sum()
-# cpc_hs["Percentage"] = cpc_hs["Counts"].apply(lambda x: round((x/sum_cpc_hs)*100,2))
+                        all_prediction.append(info)
 
-# st.altair_chart(
-#     alt.Chart(cpc_hs).mark_arc().encode(
-#     theta=alt.Theta(field="Percentage", type="quantitative"),
-#     color=alt.Color(field="CPC HS", type="nominal"),
-#     tooltip=['CPC HS', 'Counts', 'Percentage']
-# ), use_container_width=True, )
+        data_analyzed = pd.DataFrame(all_prediction).sort_values('Ratio Cost/NAC',ascending=False)
 
+        st.markdown("###### A combination of "+cpc_hs_type+", "+cpc_ls_type+", "+ctp_type+" is recommended for the current bidding. Full analysis for all combinations is given below:")
+        st.dataframe(data_analyzed)
 
-# ## CPC LS Pie Chart
-# st.markdown("###### CPC Low Sulfur Distribution")
-# cpc_ls = selected_data['CPC LS'].value_counts().rename_axis('CPC LS').reset_index(name='Counts')
-# start_row = 2
-# cpc_ls.iloc[start_row] = cpc_ls.iloc[start_row:].sum()
-# cpc_ls = cpc_ls.iloc[:start_row + 1]
-# # cpc_ls.iloc[-1,0] = "Others"
-# sum_cpc_ls = cpc_ls["Counts"].sum()
-# cpc_ls["Percentage"] = cpc_ls["Counts"].apply(lambda x: round((x/sum_cpc_ls)*100,2))
+        # Create Excel file to download
+        excel_file = to_excel(data_analyzed)
 
-# st.altair_chart(
-#     alt.Chart(cpc_ls).mark_arc().encode(
-#     theta=alt.Theta(field="Percentage", type="quantitative"),
-#     color=alt.Color(field="CPC LS", type="nominal"),
-#     tooltip=['CPC LS', 'Counts', 'Percentage']
-# ), use_container_width=True, )
+        # Button to download the prediction data
+        st.download_button(
+            label='📥 Download data as Excel',
+            data=excel_file,
+            file_name='Cost Analysis.xlsx',
+        )
 
-# ## CTP Pie Chart
-
-# st.markdown("###### CTP Distribution")
-# ctp = selected_data['CTP'].value_counts().rename_axis('CTP').reset_index(name='Counts')
-# start_row = 6
-# ctp.iloc[start_row] = ctp.iloc[start_row:].sum()
-# ctp = ctp.iloc[:start_row + 1]
-# # ctp.iloc[-1,0] = "Others"
-# sum_ctp = ctp["Counts"].sum()
-# ctp["Percentage"] = ctp["Counts"].apply(lambda x: round((x/sum_ctp)*100,2))
-
-# st.altair_chart(
-#     alt.Chart(ctp).mark_arc().encode(
-#     theta=alt.Theta(field="Percentage", type="quantitative"),
-#     color=alt.Color(field="CTP", type="nominal"),
-#     tooltip=['CTP', 'Counts', 'Percentage']
-# ), use_container_width=True, )
