@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+altair
+pyxlsb
+altair-ally
+openpyxl
+scikit-learn
+xlsxwriter
+seaborn
