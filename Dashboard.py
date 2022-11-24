@@ -50,20 +50,20 @@ single_pred_tab, batch_pred_tab = st.tabs(["Single Cost Prediction", "Multiple C
 
 ###### Tab 1: Single Prediction with Main Variables ######
 with single_pred_tab:
-    st.markdown("#### Material Type and Price")
+    st.markdown("#### Material Source and Price")
     col1 = st.columns(3)
 
     # Input for the variables
     with col1[0]:
-        cpc_hs_option = st.selectbox("Select CPC HS type", ["A","F", "M", "W"], 3)
+        cpc_hs_option = st.selectbox("Select CPC HS Source", ["A","F", "M", "W"], 3)
 
 
     with col1[1]:
-        cpc_ls_option = st.selectbox("Select CPC LS type", ["G", "J", "S"],)
+        cpc_ls_option = st.selectbox("Select CPC LS Source", ["G", "J", "S"],)
 
 
     with col1[2]:
-        ctp_option = st.selectbox("Select CTP type", ["A", "E", "H", "Q"])
+        ctp_option = st.selectbox("Select CTP Source", ["A", "E", "H", "Q"])
 
 
     col2 = st.columns(4)
@@ -108,11 +108,11 @@ with single_pred_tab:
 
     rro2, rrco2, ap, tc, nac = get_carbon(data_prediksi,material_type)
     st.markdown('#### Carbon Prediction')
-    st.text('RRO2: ' + str(rro2))
-    st.text('RRCO2: ' + str(rrco2))
-    st.text('AP: ' + str(ap))
-    st.text('TC: ' + str(tc))
-    st.text('NAC: ' + str(nac))
+    st.text('RRO2: ' + str(rro2) + ' %')
+    st.text('RRCO2: ' + str(rrco2) + ' %')
+    st.text('AP: ' + str(ap) + ' nPm')
+    st.text('TC: ' + str(tc) + ' W/mk')
+    st.text('NAC: ' + str(nac) + ' Kg/T.Al')
 
     # Create dataframe for the features input
     data = {
@@ -152,7 +152,7 @@ with batch_pred_tab:
 
     # Upload the excel file
     st.markdown('#### Uploading the material price')
-    st.write("Please make sure the uploaded file follows the right template for the material type and price.")
+    st.write("Please make sure the uploaded file follows the right template for the material source and price.")
 
     # Create the template file
     template_file = to_excel(data_template)
@@ -226,9 +226,9 @@ with batch_pred_tab:
                         ctp_type = row_ctp["Lot"] + " - " + row_cpc_ls["Source"]
 
                         info = {
-                            "CPC HS Type": cpc_hs_type,
-                            "CPC LS Type": cpc_ls_type,
-                            "CTP Type": ctp_type,
+                            "CPC HS Source": cpc_hs_type,
+                            "CPC LS Source": cpc_ls_type,
+                            "CTP Source": ctp_type,
                             "RRO2" : rro2,
                             "RRCO2" : rrco2,
                             "AP" : ap,
@@ -254,4 +254,3 @@ with batch_pred_tab:
             data=excel_file,
             file_name='Cost Analysis.xlsx',
         )
-
