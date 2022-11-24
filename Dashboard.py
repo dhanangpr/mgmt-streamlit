@@ -46,7 +46,7 @@ def get_carbon(data_prediksi, material_type):
     return rro2, rrco2, ap, tc, nac
 
 # Create multiple tabs
-single_pred_tab = st.tabs(["Single Cost Prediction"])
+single_pred_tab, batch_pred_tab = st.tabs(["Single Cost Prediction", " "])
 
 ###### Tab 1: Single Prediction with Main Variables ######
 with single_pred_tab:
